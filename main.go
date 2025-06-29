@@ -213,6 +213,10 @@ func main() {
 			}
 		}
 
+		if bestPing == -1 {
+			bestServer.Domain = "yahoo.com"
+		}
+
 		if best != 0 {
 			slog.Info("Best server found", "server", bestServer.Domain, "ping", bestPing)
 			if len(bestOut) > 0 {
