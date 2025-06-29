@@ -173,7 +173,7 @@ func main() {
 						return
 					}
 					h := ScanTLS(ip, outCh, geo)
-					if h != nil && isIgnored(h.Domain) {
+					if h != nil && (len(h.Domain) == 0 || isIgnored(h.Domain)) {
 						slog.Info("Ignoring domain", "domain", h.Domain)
 					}
 					if h == nil {
