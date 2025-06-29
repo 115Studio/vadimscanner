@@ -38,6 +38,7 @@ var builtinIgnoreList = []string{
 	"digitalocean",
 	"hetzner",
 	"hostopia",
+	"aeza",
 }
 
 func isIgnored(s string) bool {
