@@ -29,7 +29,24 @@ var ignoreDomains string
 
 var cache map[string]bool = nil
 
+var builtinIgnoreList = []string{
+	"cloudflare",
+	"vpn",
+	"shuoki",
+	"ayugram",
+	"akisearch",
+	"digitalocean",
+	"hetzner",
+	"hostopia",
+}
+
 func isIgnored(s string) bool {
+	for _, c := range builtinIgnoreList {
+		if strings.Contains(s, c) {
+			return false
+		}
+	}
+
 	if cache != nil {
 		return cache[s]
 	}
