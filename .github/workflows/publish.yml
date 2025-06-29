@@ -1,0 +1,56 @@
+name: Build and Release
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build Linux AMD64
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o RealiTLScanner-linux-amd64
+
+      - name: Build Linux ARM64
+        run: |
+          GOOS=linux GOARCH=arm64 go build -o RealiTLScanner-linux-arm64
+
+      - name: Build macOS AMD64
+        run: |
+          GOOS=darwin GOARCH=amd64 go build -o RealiTLScanner-darwin-amd64
+
+      - name: Build macOS ARM64 (Apple Silicon)
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -o RealiTLScanner-darwin-arm64
+
+      - name: Build Windows AMD64
+        run: |
+          GOOS=windows GOARCH=amd64 go build -o RealiTLScanner-windows-amd64.exe
+
+      - name: Run fetchblocked and generate domains.txt
+        run: |
+          go run ./blocked/fetchblocked.go -out ./domains.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.sha }}
+          name: "Auto Release ${{ github.sha }}"
+          files: |
+            RealiTLScanner-linux-amd64
+            RealiTLScanner-linux-arm64
+            RealiTLScanner-darwin-amd64
+            RealiTLScanner-darwin-arm64
+            RealiTLScanner-windows-amd64.exe
+            domains.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

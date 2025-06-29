@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"io"
 	"log/slog"
@@ -21,6 +22,30 @@ var timeout int
 var verbose bool
 var enableIPv6 bool
 var url string
+var best int
+var maxWait int
+var bestOut string
+var ignoreDomains string
+
+var cache map[string]bool = nil
+
+func isIgnored(s string) bool {
+	if cache != nil {
+		return cache[s]
+	}
+	if len(ignoreDomains) == 0 {
+		return false
+	}
+	data, err := os.ReadFile(ignoreDomains)
+	if err != nil {
+		return false
+	}
+	cache := map[string]bool{}
+	for _, d := range strings.Split(string(data), "\n") {
+		cache[d] = true
+	}
+	return cache[s]
+}
 
 func main() {
 	_ = os.Unsetenv("ALL_PROXY")
@@ -38,6 +63,10 @@ func main() {
 	flag.BoolVar(&enableIPv6, "46", false, "Enable IPv6 in additional to IPv4")
 	flag.StringVar(&url, "url", "", "Crawl the domain list from a URL, "+
 		"e.g. https://launchpad.net/ubuntu/+archivemirrors")
+	flag.IntVar(&best, "best", 0, "Pick the best server out of N specified")
+	flag.IntVar(&maxWait, "wait", 15, "Maximum wait time in seconds")
+	flag.StringVar(&bestOut, "bestOut", "", "Best server output")
+	flag.StringVar(&ignoreDomains, "ignoreDomains", "", "Path to a file containing domains to be ignored")
 	flag.Parse()
 	if verbose {
 		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -97,6 +126,11 @@ func main() {
 		slog.Info("Parsed domains", "count", len(domains))
 		hostChan = Iterate(strings.NewReader(strings.Join(domains, "\n")))
 	}
+
+	chs := []*ScanResponse{}
+	var mux sync.Mutex
+	ctx, cancel := context.WithCancel(context.Background())
+
 	outCh := OutWriter(outWriter)
 	defer close(outCh)
 	geo := NewGeo()
@@ -104,14 +138,69 @@ func main() {
 	wg.Add(thread)
 	for i := 0; i < thread; i++ {
 		go func() {
-			for ip := range hostChan {
-				ScanTLS(ip, outCh, geo)
+			for {
+				select {
+				case <-time.After(time.Duration(maxWait) * time.Second):
+					wg.Done()
+					return
+				case <-ctx.Done():
+					wg.Done()
+					return
+				case ip, ok := <-hostChan:
+					if !ok {
+						wg.Done()
+						return
+					}
+					h := ScanTLS(ip, outCh, geo)
+					if h != nil && isIgnored(h.Domain) {
+						slog.Info("Ignoring domain", "domain", h.Domain)
+					}
+					if h == nil {
+						continue
+					}
+					mux.Lock()
+					chs = append(chs, h)
+					mux.Unlock()
+					if len(chs) >= best && best > 0 {
+						wg.Done()
+						cancel()
+						return
+					}
+				}
 			}
-			wg.Done()
 		}()
 	}
+
 	t := time.Now()
 	slog.Info("Started all scanning threads", "time", t)
 	wg.Wait()
+
+	if best != 0 {
+		bestPing := -1
+		bestServer := &ScanResponse{}
+		for _, ch := range chs {
+			ping, err := CheckPing(ch)
+			if err != nil {
+				slog.Error("Failed to check ping", "server", ch.Domain, "error", err)
+			} else {
+				slog.Info("Checked ping", "server", ch.Domain, "ping", ping)
+				if ping <= int64(bestPing) || bestPing == -1 {
+					bestServer = ch
+					bestPing = int(ping)
+				}
+			}
+		}
+
+		if best != 0 {
+			slog.Info("Best server found", "server", bestServer.Domain, "ping", bestPing)
+			if len(bestOut) > 0 {
+				err := os.WriteFile(bestOut, []byte(bestServer.Domain), 0777)
+				if err != nil {
+					slog.Error("Failed to save best server", "path", bestOut, "error", err)
+				}
+			}
+		}
+	}
+
 	slog.Info("Scanning completed", "time", time.Now(), "elapsed", time.Since(t).String())
 }

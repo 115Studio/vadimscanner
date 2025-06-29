@@ -9,12 +9,20 @@ import (
 	"time"
 )
 
-func ScanTLS(host Host, out chan<- string, geo *Geo) {
+type ScanResponse struct {
+	Host
+	Version string
+	Alpn    string
+	Domain  string
+	Issuer  string
+}
+
+func ScanTLS(host Host, out chan<- string, geo *Geo) *ScanResponse {
 	if host.IP == nil {
 		ip, err := LookupIP(host.Origin)
 		if err != nil {
 			slog.Debug("Failed to get IP from the origin", "origin", host.Origin, "err", err)
-			return
+			return nil
 		}
 		host.IP = ip
 	}
@@ -22,13 +30,13 @@ func ScanTLS(host Host, out chan<- string, geo *Geo) {
 	conn, err := net.DialTimeout("tcp", hostPort, time.Duration(timeout)*time.Second)
 	if err != nil {
 		slog.Debug("Cannot dial", "target", hostPort)
-		return
+		return nil
 	}
 	defer conn.Close()
 	err = conn.SetDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
 	if err != nil {
 		slog.Error("Error setting deadline", "err", err)
-		return
+		return nil
 	}
 	tlsCfg := &tls.Config{
 		InsecureSkipVerify: true,
@@ -42,7 +50,7 @@ func ScanTLS(host Host, out chan<- string, geo *Geo) {
 	err = c.Handshake()
 	if err != nil {
 		slog.Debug("TLS handshake failed", "target", hostPort)
-		return
+		return nil
 	}
 	state := c.ConnectionState()
 	alpn := state.NegotiatedProtocol
@@ -63,4 +71,11 @@ func ScanTLS(host Host, out chan<- string, geo *Geo) {
 		"origin", host.Origin,
 		"tls", tls.VersionName(state.Version), "alpn", alpn, "cert-domain", domain, "cert-issuer", issuers,
 		"geo", geoCode)
+	return &ScanResponse{
+		Host:    host,
+		Version: tls.VersionName(state.Version),
+		Alpn:    alpn,
+		Domain:  domain,
+		Issuer:  issuers,
+	}
 }

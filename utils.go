@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -9,9 +10,11 @@ import (
 	"math"
 	"math/big"
 	"net"
+	"net/http"
 	"net/netip"
 	"regexp"
 	"strings"
+	"time"
 )
 
 const (
@@ -205,4 +208,28 @@ func NextIP(ip net.IP, increment bool) net.IP {
 	b := ipb.Bytes()
 	b = append(make([]byte, len(ip)-len(b)), b...)
 	return b
+}
+func CheckPing(h *ScanResponse) (int64, error) {
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	request, err := http.NewRequest("GET", fmt.Sprintf("https://%s", h.Domain), bytes.NewBuffer([]byte{}))
+	if err != nil {
+		return 0, err
+	}
+
+	begin := time.Now()
+	res, err := client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	dur := time.Since(begin).Milliseconds()
+
+	if res.StatusCode >= 200 && res.StatusCode < 300 {
+		return dur, nil
+	} else {
+		return 0, fmt.Errorf("http code %d", res.StatusCode)
+	}
 }
