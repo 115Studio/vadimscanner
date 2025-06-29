@@ -52,5 +52,3 @@ jobs:
             RealiTLScanner-darwin-arm64
             RealiTLScanner-windows-amd64.exe
             domains.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
