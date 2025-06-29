@@ -152,15 +152,18 @@ func main() {
 	outCh := OutWriter(outWriter)
 	defer close(outCh)
 	geo := NewGeo()
+	lastChecked := time.Now()
 	var wg sync.WaitGroup
 	wg.Add(thread)
 	for i := 0; i < thread; i++ {
 		go func() {
 			for {
-				select {
-				case <-time.After(time.Duration(maxWait) * time.Second):
+				if time.Since(lastChecked) > time.Duration(maxWait) * time.Second {
 					wg.Done()
+					cancel()
 					return
+				}
+				select {
 				case <-ctx.Done():
 					wg.Done()
 					return
@@ -178,6 +181,7 @@ func main() {
 					}
 					mux.Lock()
 					chs = append(chs, h)
+					lastChecked = time.Now()
 					mux.Unlock()
 					if len(chs) >= best && best > 0 {
 						wg.Done()
